@@ -1,0 +1,137 @@
+---
+title: "Getting Started with Text Analysis in R"
+author: "Christina Maimone"
+date: "6/14/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This tutorial assumes familiarity with dplyr and ggplot2.
+
+# Setup
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(knitr)
+library(kableExtra)
+
+# if you need to install packages, do the following:
+# install.packages(c("tidyverse", "tidytext", "knitr", "kableExtra"))
+```
+
+We're going to work with a collection of press releases from members of the US Senate from 2020-03-10 to 2020-06-30 -- the first ~3.5 months of coronovirus in the US.  The press releases were collected via the [ProPublica API](https://projects.propublica.org/api-docs/congress-api/statements/#statements) for Congressional Statements.  The text was extracted from the collected web pages mostly with the Python [newspaper](https://newspaper.readthedocs.io/en/latest/) library. 
+
+```{r}
+pr <- read_csv("pr.csv")   # if the file is local
+# pr <- read_csv()   # read file from online, if you don't have the file locally
+
+pr
+```
+
+## Dataset Basics
+
+What's in the dataset?
+
+Number of Senators
+
+```{r}
+# pr is the name of the data frame
+# n_distinct counts the number of different values
+# person_id is the column we're summarizing -- what we're counting unique values of
+summarize(pr, n_distinct(person_id))
+```
+
+Almost all of them -- missing a few
+
+Number of press releases
+
+```{r}
+nrow(pr)  # number of rows (each row is a press release)
+```
+
+Press releases per Senator -- distribution
+
+```{r}
+count(pr, person_id) %>%   # frequency table for person_id -- number of times each ID appears
+  ggplot(aes(x=n)) +   # set up the plot -- we're going to plot the n count variable created by count()
+  geom_histogram(bins=40)  # making a histogram with 40 bins
+```
+
+A few very vocal folks:
+
+```{r}
+count(pr,                   # data frame we're working with
+      name, party, state,   # variables to group by -- we're using multiple to keep them in the output
+      sort=TRUE)            # sort the results with the most frequent values first
+```
+
+PRs by date:
+
+```{r}
+ggplot(pr, aes(x=date)) +   # plot the date variable on the x-axis
+  geom_bar()                # make a bar plot (count # of times each date appears and plot that)
+```
+
+You can see a weekly cycle to it.
+
+Look at the text of a few press releases:
+
+```{r}
+# cat so that line breaks are printed
+cat(pr$text[1:4],   # first 4 in the data set
+    sep="\n\n*******\n\n")  # put this between press releases so that we know when one stops
+```
+
+
+
+# Exploring the Dataset
+
+We'll start exploring the text by looking at common words.
+
+## Search for specific words/phrases
+
+How many press releases have "covid" in them?
+
+```{r}
+# one line
+count(pr, str_detect(text, fixed("covid", ignore_case=TRUE)))
+
+# pr is the data frame name
+# str_detect is the function to use to see if one string is in another
+# text is the name of the column
+# we use fixed() because we're searching for a fixed string (not regex pattern)
+# "covid" is the search term
+# ignore_case=TRUE makes the search case insensitive
+
+```
+
+### EXERCISE
+
+*Make sure you're run the setup code chunks above to load the libraries and the data.*
+
+For comparison, how many press releases mention "state" (such as "in our great state, ...")?
+
+Replace `____` with the search term.
+
+Try a few other search terms too.
+
+```{r, eval=FALSE}
+count(pr, str_detect(text, fixed(____, ignore_case=TRUE)))
+```
+
+
+## Common Words
+
+Now, we don't want to have to guess all of the words that appear -- how can we get a list of the most common words?
+
+```{r}
+
+```
+
+
