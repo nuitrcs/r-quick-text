@@ -47,7 +47,9 @@ We're going to work with a collection of press releases from members of the US S
 
 ```{r}
 pr <- read_csv("pr.csv")   # if the file is local
-# pr <- read_csv()   # read file from online, if you don't have the file locally
+
+# read file from online, if you don't have the file locally
+# pr <- read_csv("https://raw.githubusercontent.com/nuitrcs/r-quick-text/main/pr.csv")   
 
 pr
 ```

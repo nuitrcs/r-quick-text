@@ -1,6 +1,6 @@
 # Quick Intro to Text Analysis in R
 
-These materials were created for SICSS-Chicago 2021
+These materials were created for SICSS-Chicago 2021.  
 
 ## Getting R Setup
 
