@@ -13,6 +13,23 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This tutorial assumes familiarity with dplyr and ggplot2.
 
+To really learn how to work with text:
+
+**Tidytext**: what we're using here
+
+* https://www.tidytextmining.com/
+* https://www.tidytextmining.com/
+
+**Quanteda**: another useful package that has a slightly different workflow
+
+* https://quanteda.io/
+
+A good place to start with Python:
+
+* TextBlob: https://textblob.readthedocs.org/
+* TF-IDF in Python: https://programminghistorian.org/en/lessons/analyzing-documents-with-tfidf
+
+
 # Setup
 
 ```{r}
@@ -20,9 +37,10 @@ library(tidyverse)
 library(tidytext)
 library(knitr)
 library(kableExtra)
+library(quanteda)
 
 # if you need to install packages, do the following:
-# install.packages(c("tidyverse", "tidytext", "knitr", "kableExtra"))
+# install.packages(c("tidyverse", "tidytext", "knitr", "kableExtra", "quanteda"))
 ```
 
 We're going to work with a collection of press releases from members of the US Senate from 2020-03-10 to 2020-06-30 -- the first ~3.5 months of coronovirus in the US.  The press releases were collected via the [ProPublica API](https://projects.propublica.org/api-docs/congress-api/statements/#statements) for Congressional Statements.  The text was extracted from the collected web pages mostly with the Python [newspaper](https://newspaper.readthedocs.io/en/latest/) library. 
@@ -117,12 +135,11 @@ count(pr, str_detect(text, fixed("covid", ignore_case=TRUE)))
 
 For comparison, how many press releases mention "state" (such as "in our great state, ...")?
 
-Replace `____` with the search term.
-
 Try a few other search terms too.
 
-```{r, eval=FALSE}
-count(pr, str_detect(text, fixed(____, ignore_case=TRUE)))
+```{r}
+
+
 ```
 
 
@@ -130,8 +147,337 @@ count(pr, str_detect(text, fixed(____, ignore_case=TRUE)))
 
 Now, we don't want to have to guess all of the words that appear -- how can we get a list of the most common words?
 
+First, we need to transform our dataset to have words.  Instead of making a document-term matrix at this point, we'll make a data frame with one word per row.  We'll keep all of the extra metadata in our data frame since the file we're working with isn't huge.  For large files, you wouldn't want to keep all of the metadata because it gets copied many times and will make the resulting object too big.
+
+We will also add an identifier for each row, so we know which press release each word came from if we want to use that.
+
+
+```{r}
+words <- pr %>%
+  mutate(pr_id = 1:nrow(pr)) %>%  # add an identifier for each press release
+  unnest_tokens("word", text)
+```
+
+```{r}
+head(words)
+```
+
+
+Now that we have a dataset with words, we can just count them:
+
+```{r}
+# words is the data frame
+# word is the column name
+# sot the output to see most common
+count(words, word, sort=TRUE)
+```
+
+This is not a surprising list.  These are the most common words in almost any English text.  
+
+There are two ways we could look for more interesting words.  
+
+1. If we do really just want the most common words, we could eliminate "stop words" using a list -- this is just a list of very common words.  There is no one canonical list of stop words -- the contents and length vary, and you could make one yourself customized to your use case.  
+
+2. We can use TF-IDF scores (term-frequency inverse document frequency), which is a way of normalizing the frequency of words in a document or group of documents compared to the frequency across the entire set of documents -- so find words that are more common in a document or set of documents than they are in the full set of documents.  
+
+### Remove Stop Words
+
+The tidytext package has a built-in data frame of stopwords: `stop_words`.  We can combine this with our words data frame to remove these words
+
+```{r}
+words %>%
+  anti_join(stop_words, by="word") %>%  # remove from words those that have a match in stop_words
+  count(word, sort=TRUE)
+```
+
+These are reasonable.  We could do these for different groups.
+
+We can compute the list just for a specific group:
+
+```{r}
+# just democrats
+words %>%
+  filter(party == "D") %>%   # specify one group at a time
+  anti_join(stop_words, by="word") %>% 
+  count(word, sort=TRUE)
+```
+
+Or we could make a list for each party, but we'd need to drop the counts to make this manageable to see -- we'll just look at the rank order of words
+
+```{r}
+words %>%
+  anti_join(stop_words, by="word") %>%  
+  group_by(party) %>%   # variable that defines our groups
+  count(word, sort=TRUE) %>%
+  mutate(rank = row_number()) %>%
+  select(party, rank, word) %>%
+  pivot_wider(names_from=party, values_from=word)
+```
+
+
+
+### EXERCISE
+
+*Make sure you have the `words` data frame.  If you haven't been running the code above, make the data frame first:*
+
+```{r, eval=FALSE}
+# eval=FALSE above just prevents this code from being run when I make an HTML version - 
+# you can still run the code manually
+
+words <- pr %>%
+  mutate(pr_id = 1:nrow(pr)) %>%  
+  unnest_tokens("word", text)
+```
+
+Now, find the most common words, excluding stop words, by gender of the Senator -- there is a column called `male` with TRUE and FALSE values in it.
+
 ```{r}
 
 ```
+
+
+
+### TF-IDF
+
+The most common words are very similar across groups.  So what if we want to know what words that are more "Democratic" or "Republican" -- what words differentiate these two groups -- are used disproportionately more by one group than the other?  Then we can use TF-IDF.  
+
+TF-IDF can be computed at the document level (each press release), but we can do it for whole groups by considering all text written by each group to be a single document. We use the grouping variable (here: party) as the document ID.
+
+```{r}
+words %>%
+  count(party, word) %>%  # we need to count times each word appears for each group (party)
+  bind_tf_idf(word, party, n) %>%   # adds columns for tf, idf, tf-idf
+  arrange(desc(tf_idf))  # sort the results to show us most distinctive terms regardless of party
+```
+
+Some of these words aren't used very frequently.  So we might want to have a cut-off for how many times a word appears overall.
+
+Let's filter on word frequency, and convert to rankings like we did above:
+
+```{r}
+words %>%
+  count(party, word) %>%
+  filter(n >= 100) %>%   # words used at least 100 times overall
+  group_by(party) %>%
+  bind_tf_idf(word, party, n) %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(rank = row_number()) %>%  # compute the rank for each term
+  select(party, rank, word) %>%    # keep just the party, words, and rank - drop the counts
+  pivot_wider(names_from=party, values_from=word)  # make one column of words for each party
+```
+
+You can see that some stopwords are still in here - this reflects different language use by the groups (vs. content).  
+
+In an analysis, we might want to filter out places and additional words that are specific to this context that we want to ignore.
+
+
+### EXERCISE
+
+Now, use tf-idf to find top words by the gender of the Senator (variable: `male`)
+
+```{r}
+
+```
+
+
+# Turning Text into Data
+
+Next we turn to a few ways we could turn our text into some type of data frame of numeric values.  
+
+## Document-Term Matrix
+
+First, how do we convert our data from the long form `words` data frame above into a document-term matrix with one row per document and one column per term?
+
+There are a few different versions of this -- they create objects expected by other text analysis packages `tm` and `quanteda`.  We'll do the version for quanteda here.
+
+However, before we do this, we are going to filter the data to only include terms that show up 10 times.  Otherwise, we'll have a very large DTM that isn't much use to us.  10 is an arbitrary cut-off - you could use a different value.
+
+This will take approximately 30-40 seconds to run (code not run when file knitted to html).
+
+
+```{r, eval=FALSE}
+low_freq <- count(words, word) %>%
+  filter(n < 10)
+
+dtm <- words %>%
+  anti_join(low_freq, by="word") %>%  # remove words with low overall frequency
+  count(pr_id, word) %>%  # we need count of terms per document to start with
+  cast_dfm(pr_id,  # column identifying each press release
+           word,   # column with the "terms"
+           n)      # column with the count -- n is created by count() above
+           
+```
+
+```{r, eval=FALSE}
+dtm
+```
+
+Even after filtering out low frequency words, we still have 14k+ different words in our matrix.  We could do further filtering -- removing numbers, for example.  This is stored as a sparse matrix, not a normal data frame, because it's large and has a lot of 0s in it.  
+
+But we can still index it like a data frame.  In particular, we could pull specific columns for specific terms:
+
+```{r, eval=FALSE}
+dtm[,"abused"]
+```
+
+```{r, eval=FALSE}
+colnames(dtm)
+```
+
+Instead of filling the DTM with the word counts, you can also do TF-IDF or convert it to binary 0/1 indicators - what you want depends on the context.  
+
+You could also process the words further first, for example, by converting all words to their stem (the core part of the word), so that words like dogs and dog are combined together.  Whether this helps depends on the specifics of your analysis case.
+
+You could use individual term vectors here in a predictive model -- we're not going to build a model here today.  Otherwise, the main reason to convert the data is to pass it to another package that does something you want.  But, if you want to use something in quanteda, for example, you may want to put your data in the format it wants from scratch to take advantage of the many cleaning and processing functions included in that package.
+
+## Dictionaries
+
+Let's build a short, naive dictionary to match against our documents to see how many press releases mention education topics.  We'll put the terms in a data frame, so we can join it with `words`.  
+
+```{r}
+education <- data.frame(word = c("education",
+                                 "school",
+                                 "schools",
+                                 "teacher",
+                                 "teachers",
+                                 "student",
+                                 "students"),
+                        weight = 1)  # this will just give us something to add up later
+```
+
+All of the terms here are lowercase because our `words` data is all lowercase.
+
+We can join this data to `words` and count how many times one of these terms appear in each press release:
+
+```{r}
+words %>%
+  left_join(education, by="word") %>%
+  group_by(pr_id) %>%   # compute for each press release
+  summarize(education = sum(weight, na.rm=TRUE)) %>%  # total number of keywords
+  arrange(desc(education))
+```
+Let's look at a top document - remember that `pr_id` is the row number in `pr`
+
+```{r}
+cat(pr$text[825])
+```
+
+
+### EXERCISE
+
+Make a dictionary of coronavirus related terms.  Apply it to the press releases.
+
+```{r}
+
+```
+
+
+## Sentiment
+
+Sentiment is a measure of how positive or negative in sentiment (tone) a piece of text is.  One simple way to compute this is to use dictionaries of weighted terms.  tidytext includes some of these dictionaries that we can use in the `sentiments` data frame (or use the get_sentiments function to retrieve other versions from the textdata package, which you'd need to install).
+
+```{r}
+head(sentiments)
+```
+
+```{r}
+words %>%
+  left_join(sentiments, by="word") %>%
+  group_by(pr_id) %>%
+  summarize(positive = sum(sentiment == "positive", na.rm=TRUE),  # count positive words
+            negative = sum(sentiment == "negative", na.rm=TRUE),  # count negative words
+            overall = positive - negative,  # take the difference between these
+            total_words = n(),  # length of the document overall - n() counts number of lines, which = words here
+            sentiment_prop = overall/total_words) %>%  # normalize by document length
+  arrange(desc(abs(sentiment_prop)))  # look at strongest sentiment in either direction: abs = absolute value
+  
+```
+
+```{r}
+cat(pr$text[7787])
+```
+
+An example with more words:
+
+```{r}
+cat(pr$text[7280])
+```
+
+This is a good example of a document that seems negative, because it covers a negative topic, but that we wouldn't necessarily consider negative overall because it's a bill to help people.  These types of discrepancies are common.  Remember: many sentiment analyzers were built using data from a different context than what you may be looking at.
+
+We could use variations on these sentiment scores (positive, negative, overall, normalized, etc.) as variables in some other analysis.
+
+
+People have created slightly more sophisticated versions of sentiment analyzers that take into account things like negation.  These methods need the full original text so parts of speech and dependencies can be parsed.  But these still use dictionaries of terms as the core of the measure.  Try the sentimentr package for other versions of sentiment analysis.  
+
+
+## Really Simple (BAD!) Model
+
+Using the top 200 terms by tf-idf for each party, how well can we predict the party of the Senator who wrote each press release?  We'll exclude independents for this.
+
+**NOTE**: This is bad - we are skipping a lot of steps.  This is only indended as a quick example of how you could turn text into variables that you use in a model.  Do something better. :)
+
+First, what terms (words) are we going to use for our features?
+
+```{r}
+termlist <- words %>%
+  group_by(party) %>%
+  count(word) %>%
+  bind_tf_idf(word, party, n) %>%   # adds columns for tf, idf, tf-idf
+  filter(party %in% c("D", "R")) %>%  # exclude independents
+  slice_max(tf_idf, n=200) %>%  # top 200 terms for each party by tf-idf
+  pull(word) %>%
+  unique()
+
+termlist
+```
+
+These are NOT good words, and they include a lot of geographic terms and even Senator names, which is basically cheating in this context.
+
+Count number of times each of these terms appears in each press release.  Then make a DTM for just these terms -- we'll do this manually with `pivot_wider`.  Instead of raw counts, we're just going to note whether the term appears or not.
+
+```{r}
+pr_term <- words %>%
+  filter(word %in% termlist, 
+         party %in% c("D", "R")) %>%  
+  select(pr_id, party, word) %>%
+  unique() %>%
+  mutate(n = 1) %>%  # to fill in indicator variables
+  pivot_wider(names_from=word, values_from=n, values_fill=0) 
+```
+
+```{r}
+head(pr_term)
+```
+
+Run a logit
+
+```{r}
+m1 <- glm(I(party == "D") ~ ., # predict using all variables in the data
+          data = pr_term[, -1], # exclude pr_id as a column in the data
+          family="binomial")
+summary(m1)
+```
+
+The error is coming from words that only appear for one party or the other -- they are perfect predictors.  We should filter these out.
+
+How well did we do?
+
+```{r}
+pr_term$prediction <- predict(m1, pr_term, type="response") > .5
+
+count(pr_term, party, prediction) %>%
+  pivot_wider(names_from = prediction, values_from=n)
+```
+
+```{r}
+pr_term %>%
+  summarize(correct = sum((party=="D" & prediction) | (party == "R" & !prediction)),
+            prop = correct/n())
+```
+
+We're getting ~85% correct -- but note that this is on the data we built the model with.  The accuracy wouldn't be that good if we applied the model to future/other data.  But, just knowing which of ~350 words appear in a press release (at all) can tell us pretty well which party the Senator is from.  We could probably get similar results with even fewer words, although not as good results if we excluded geographical terms and names. 
+
+
 
 

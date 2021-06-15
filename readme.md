@@ -1,6 +1,6 @@
 # Quick Intro to Text Analysis in R
 
-This workshop is for SICSS-Chicago 2021
+These materials were created for SICSS-Chicago 2021
 
 ## Getting R Setup
 
@@ -9,7 +9,7 @@ This workshop is for SICSS-Chicago 2021
 If you have R and RStudio installed on your computer, great - use that.  We'll need a few packages:
 
 ```r
-install.packages()
+install.packages(c("tidyverse", "tidytext", "knitr", "kableExtra", "quanteda"))
 ```
 
 These can take a while to install if you don't already have these packages.  If prompted to compile anything, or any questions about "source", choose no.
