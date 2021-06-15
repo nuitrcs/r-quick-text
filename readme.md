@@ -25,7 +25,7 @@ If you are using RStudio Cloud, when you set up the project, use the URL for thi
 In RStudio Cloud, you need to install packages.  Run this code in the console:
 
 ```r
-install.packages()
+install.packages(c("tidyverse", "tidytext", "knitr", "kableExtra", "quanteda"))
 ```
 
 It will take a while to run.  If prompted to compile anything, or any questions about "source", choose no.
